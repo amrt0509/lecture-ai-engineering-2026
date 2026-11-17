@@ -125,17 +125,41 @@ def open_index(path: Path):
 
 
 def search(query: str) -> list[dict]:
-    """質問を埋め込み、近いページを最大RAG_TOP_K件返す。"""
-    if not isinstance(query, str) or not query.strip():
-        raise ValueError("検索語が空です。")
-    with open_index(RAG_DB) as db:
-        vector = embed_text(query.strip(), "RETRIEVAL_QUERY")
-        rows = db.execute("""
+  """質問を埋め込み、近いページを最大RAG_TOP_K件取得し、同一資料内の前後1ページも重複なく返す。"""
+  if not isinstance(query, str) or not query.strip():
+    raise ValueError("検索語が空です。")
+  with open_index(RAG_DB) as db:
+    vector = embed_text(query.strip(), "RETRIEVAL_QUERY")
+    rows = db.execute(
+        """
             SELECT page_id, document_id, lecture, document_title, section, title, page, content,
                    vec_distance_cosine(embedding, ?) AS distance
             FROM chunks ORDER BY distance, page_id LIMIT ?
-        """, (sqlite_vec.serialize_float32(vector), RAG_TOP_K))
-        return [dict(row) for row in rows]
+        """,
+        (sqlite_vec.serialize_float32(vector), RAG_TOP_K),
+    ).fetchall()
+
+    results = []
+    seen_pages = set()
+    for row in rows:
+      hit = dict(row)
+      neighbors = db.execute(
+          """
+                SELECT page_id, document_id, lecture, document_title, section, title, page, content
+                FROM chunks
+                WHERE document_id = ? AND page BETWEEN ? AND ?
+                ORDER BY page
+            """,
+          (hit["document_id"], hit["page"] - 1, hit["page"] + 1),
+      ).fetchall()
+      for neighbor in neighbors:
+        item = dict(neighbor)
+        if item["page_id"] in seen_pages:
+          continue
+        seen_pages.add(item["page_id"])
+        item["distance"] = hit["distance"]
+        results.append(item)
+    return results
 
 
 def search_graph(query: str) -> dict:
