@@ -126,3 +126,28 @@ def search_graph(query: str) -> str:
         return json.dumps({"error": str(e)}, ensure_ascii=False)
     except APIError as e:
         return json.dumps({"error": api_error_message(e.code)}, ensure_ascii=False)
+
+def make_quiz(lecture: int) -> str:
+    """指定した回（1始まりの整数）の講義要点をもとに、確認用クイズの問題文を返す。
+
+    lecture には対象の講義回（例: 2）を指定する。存在しない回が指定された場合は、
+    指定可能な講義回の一覧を含む案内メッセージを返す。
+    """
+    lectures_dir = DATA_DIR / "lectures"
+    available = sorted(p.stem for p in lectures_dir.glob("*.md"))
+    path = lectures_dir / f"{lecture:02d}.md"
+
+    if lecture < 1 or not path.exists():
+        available_text = ", ".join(available) if available else "なし"
+        return (
+            f"指定された「第{lecture}回」は範囲外または存在しません。"
+            f"有効な講義回を指定してください（現在用意されている回: {available_text}）。"
+        )
+
+    summary_text = path.read_text(encoding="utf-8").strip()
+    lines = [line.strip() for line in summary_text.splitlines() if line.strip()]
+    excerpt = "\n".join(lines[:12])
+    return (
+        f"第{lecture}回の講義要点からクイズを作成するための材料です。\n"
+        f"以下の内容をもとに、理解度を確認する問題を1〜2問作成してください:\n\n{excerpt}"
+    )
